@@ -2,7 +2,7 @@
   "name": "devcontainertowsl",
   "displayName": "DevContainerToWSL",
   "description": "Convert your dev containers to a WSL distro",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "extensionKind":[
     "ui",
     "workspace"
@@ -14,8 +14,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:devcontainertowsl.checkIfRemote",
-    "*"
+    "onCommand:devcontainertowsl.checkIfRemote"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -25,13 +24,15 @@
         "title": "Check If Remote"
       }
     ],
-    "views": {
-      "explorer": [
-        {
-          "id": "nodeDependencies",
-          "name": "Node Dependencies"
+    "configuration": {
+      "title": "wslDistroLocation",
+      "properties": {
+        "devcontainertowsl.wslDistroLocation": {
+          "type": "string",
+          "default": "",
+          "description": "The location of the WSL distro"
         }
-      ]
+      }
     }
   },
   "scripts": {
