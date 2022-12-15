@@ -75,8 +75,8 @@ export function activate(context: vscode.ExtensionContext) {
             // Ask the user to select an image from the list
             let selectedDockerImageName = await vscode.window.showQuickPick(dockerImages);
 
-            // Process the image name. So vsc-vue-shopping-cart-85b9b471bbb02f934b1d0de27695c1b3 becomes vue-shopping-cart or vsc-gitgudissues-0f3c1b8e042af63247ebe5341441046f-uid becomes gitgudissues
-            let imageName = selectedDockerImageName?.toString().replace("vsc-", "").replace("-uid", "").replace(/-[0-9a-f]{32}/g, "");
+            // Process the image name. So vsc-vue-shopping-cart-85b9b471bbb02f934b1d0de27695c1b3 becomes vsc-vue-shopping-cart or vsc-gitgudissues-0f3c1b8e042af63247ebe5341441046f-uid becomes vsc-gitgudissues
+            let imageName = selectedDockerImageName?.toString().replace("-uid", "").replace(/-[0-9a-f]{32}/g, "");
 
             if (imageName == null || imageName == "") {
                 vscode.window.showInformationMessage("Error processing image name");
@@ -92,26 +92,45 @@ export function activate(context: vscode.ExtensionContext) {
                 if (wslDistros.includes(imageName?.toString() ?? "unsearchable&name")) {
                     vscode.window.showInformationMessage("That image name is already in use");
                 } else {
+
+                    let newWSLDistroName = imageName?.toString() ?? "unsearchable&name";
+                    let distroInstallPath = (wslDistroLocation?.toString() ?? "unsearchable&name") + "\\" + (newWSLDistroName);
+
+                    let backSlashedDistroInstallPath = distroInstallPath.replace(/\\/g, "\\\\\\\\");
+                    // Run a PowerShell command to convert the path to a WSL path and remove the end of line
+                    let wslFormatDistroInstallPath = (await execShell(`powershell.exe /c wsl.exe wslpath ${backSlashedDistroInstallPath}`)).replace("\n", "");
+
                     // Run a PowerShell command to check if the folder for the WSL distro exists and if not create it
                     console.log("Creating new folder for WSL distro");
-                    let newFolderOutput = await execShell(`powershell.exe /c \"if (!(Test-Path -Path ${wslDistroLocation?.toString() ?? "unsearchable&name"}\\${imageName?.toString() ?? "unsearchable&name"})) { New-Item -ItemType Directory -Path ${wslDistroLocation?.toString() ?? "unsearchable&name"}\\${imageName?.toString() ?? "unsearchable&name"} }\"`);
+                    let newFolderOutput = await execShell(`powershell.exe /c \"if (!(Test-Path -Path ${distroInstallPath})) { New-Item -ItemType Directory -Path ${distroInstallPath} }\"`);
 
                     // Run a PowerShell command to check if a container named cscode_export_container exists and if so remove it
                     console.log("Removing old container");
                     let dockerContainerRemoveOutput = await execShell(`powershell.exe /c \"if (docker ps -a -q -f name=vscode_export_container) { docker rm vscode_export_container }\"`);
 
+                    // Run a PowerShell command to remove the old WSL distro if present
+                    console.log("Removing old WSL distro");
+                    try {
+                        let wslDistroRemoveOutput = await execShell(`powershell.exe /c "wsl.exe --unregister ${newWSLDistroName}"`);
+                    } catch (error) {
+                        console.log("No old WSL distro to remove");
+                    }
+
                     // Run a PowerShell command to run bash inside of specified docker image and name the container as vscode_export_container
                     console.log("Running bash inside of docker image");
                     let dockerRunOutput = await execShell(`powershell.exe /c docker run -t --name vscode_export_container ${selectedDockerImageName?.toString() ?? "unsearchable&name"} node -e \"console.log(123)\"`);
 
+                    let dockerContainerSHA = (await execShell(`powershell.exe /c docker ps -a -q -f name=vscode_export_container`)).replace("\n", "");
+
                     // Run a PowerShell command to export the container as a tar file
-                    console.log("Exporting container");
-                    vscode.window.showInformationMessage("Imorting WSL distro, this could take a while so leave VS Code Open and go get a coffee!");
-                    let dockerExportOutput = await execShell(`powershell.exe /c \"docker export vscode_export_container > ${wslDistroLocation?.toString() ?? "unsearchable&name"}\\${imageName?.toString() ?? "unsearchable&name"}.tar\"`);
+                    console.log(`Exporting container to ${distroInstallPath}.tar`);
+                    console.log(`powershell.exe /c 'docker export --output="${distroInstallPath}.tar" ${dockerContainerSHA}'`);
+                    vscode.window.showInformationMessage("Importing WSL distro, this could take a while so leave VS Code Open and go get a coffee!");
+                    let dockerExportOutput = await execShell(`powershell.exe /c 'docker export --output="${distroInstallPath}.tar" ${dockerContainerSHA}'`);
 
                     // Run a PowerShell command to import the container
                     console.log("Importing container");
-                    let wslImportOutput = await execShell(`powershell.exe /c \"wsl.exe --import ${imageName?.toString() ?? "unsearchable&name"} ${wslDistroLocation?.toString() ?? "unsearchable&name"}\\${imageName?.toString() ?? "unsearchable&name"} ${wslDistroLocation?.toString() ?? "unsearchable&name"}\\${imageName?.toString() ?? "unsearchable&name"}.tar\"`);
+                    let wslImportOutput = await execShell(`powershell.exe /c \"wsl.exe --import ${newWSLDistroName} ${distroInstallPath} ${distroInstallPath}.tar\"`);
 
                     // Show success message
                     vscode.window.showInformationMessage("Successfully imported WSL distro");
@@ -121,11 +140,12 @@ export function activate(context: vscode.ExtensionContext) {
 
                     // Run a PowerShell command to remove the tar file
                     console.log("Removing tar file");
-                    let dockerRemoveTarOutput = await execShell(`powershell.exe /c Remove-Item ${wslDistroLocation?.toString() ?? "unsearchable&name"}\\${imageName?.toString() ?? "unsearchable&name"}.tar`);
+                    console.log(`powershell.exe /c 'Remove-Item ${distroInstallPath}.tar'`);
+                    let dockerRemoveTarOutput = await execShell(`powershell.exe /c 'Remove-Item ${distroInstallPath}.tar'`);
 
                     // Run a PowerShell command to open the WSL distro in a new Terminal Window
                     console.log("Opening WSL distro in new Terminal Window");
-                    let wslOpenOutput = await execShell(`powershell.exe /c \"start wsl.exe -d ${imageName?.toString() ?? "unsearchable&name"}\"`);
+                    let wslOpenOutput = await execShell(`powershell.exe /c 'Start-Process wsl.exe -ArgumentList "-d","${newWSLDistroName}","--cd","~"'`);
                 }
 
             }
